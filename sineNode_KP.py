@@ -1,127 +1,107 @@
-'''
-Sine Node v1.0
-By Kyra Procopi 
-'''
+from PySide2 import QtWidgets
+from shiboken2 import wrapInstance
+from maya import cmds, OpenMayaUI
 import sys
-import math
-from maya.api import OpenMaya
 
-# Unique id
-kPluginNodeTypeName = "SineNodeKP"
-SineNodeId = OpenMaya.MTypeId(0x24171)
-# Specify API
-def maya_useNewAPI():
-    pass
-# Sine Node Class
-class SineNode(OpenMaya.MPxNode):
+#Global Variables 
+main_channelbox_name = "mainChannelBox"
+node_data_code = "main_channelbox_name = " + """'mainChannelBox'"""
 
-    # Inputs
-    input = OpenMaya.MObject()
-    m_time = OpenMaya.MObject()
-    amplitude = OpenMaya.MObject()
-    offset = OpenMaya.MObject()
+#Change channel BG box color
+def channelBoxColorOverride(code):
     
-    # Outputs
-    output = OpenMaya.MObject()
+    #Find pyside widget
+    channelbox_widget = wrapInstance(int(OpenMayaUI.MQtUtil.findControl(main_channelbox_name)),QtWidgets.QWidget)
+    selected_attributes = cmds.channelBox(main_channelbox_name, q=True, sma=True)
+    
+    #Script Node
+    if cmds.objExists("channelColorData"):
+        channelBoxColorsData = "channelColorData"
+    else:
+        channelBoxColorsData = cmds.scriptNode(n="channelColorData", st=1)
+        cmds.setAttr("channelColorData.sourceType", 1)
+    
+    #Change Color
+    def color_change(selected_attribute):
+        cmds.channelBox(
+        main_channelbox_name,
+        edit=True,
+        attrRegex=(selected_attribute),
+        attrBgColor=values
+        )
+        color_data = ("cmds.channelBox(" +
+            "main_channelbox_name," +
+            "edit=True," +
+            """attrRegex='{}',""".format(selected_attribute) +
+            """attrBgColor={})""".format(values)+ """\n""") 
+        color_data_code = str(color_data)
+        return color_data_code 
+   
+    if selected_attributes==None:
+        sys.stderr.write("Please select attributes in channel box \n")
+        return
+        
+    else:
+        #Color Editor 
+        cmds.colorEditor()
+        if cmds.colorEditor(query=True, result=True):
+            values = cmds.colorEditor(query=True, rgb=True)  
+            #Loop through 
+            color_output = str()
+            color_data = color_output.join(color_change(attr)for attr in selected_attributes)
 
-    def __init__(self):
-        super(SineNode, self).__init__()
+        else:
+            sys.stderr.write("Editor was dismissed \n")
+            return
+                      
+    #Plug Code intro Script Node 
+    if cmds.objExists("channelColorData"):
+        code = cmds.scriptNode("channelColorData", bs=True, q=True)
+    
+    if color_data != None:
+        try:
+            code += "\n" + color_data
+            cmds.scriptNode("channelColorData", edit=True, bs=code)
+            
+        except:
+            code = node_data_code + "\n" + color_data
+            cmds.scriptNode("channelColorData", edit=True, bs=code)
+                          
+#Select Script Node
+def channelColorData(code):
+    if cmds.objExists("channelColorData"):
+        sys.stderr.write("Node Exists \n")
+        channelBoxColorsData = "channelColorData"
+        cmds.select("channelColorData")
+        return channelBoxColorsData
+    else:
+        sys.stderr.write("Script node has not been created. Please apply color overrides to create script node \n")
 
-    def compute(self, plug, dataBlock):
+#Get Exsiting data         
+def get_existing_data(code):
+    if cmds.objExists("channelColorData"):
+        code = cmds.scriptNode("channelColorData", bs=True, q=True)
+        sys.stderr.write("Exisiting Override Data retrieved \n") 
+        return code
+    else:
+        sys.stderr.write("No existing data \n")         
 
-        if (plug == SineNode.output):
+#Reset Overrides
+def reset(code):
+    if cmds.objExists("channelColorData"):
+        code = node_data_code
+        cmds.scriptNode("channelColorData", edit=True, bs=code)
+        sys.stderr.write("Overrides restored to default. Please close Maya and re-open \n")
+    
+    else:
+        sys.stderr.write("Script node has not been created. Please apply color overrides to create script node \n")
+                
 
-            input_value = dataBlock.inputValue(SineNode.input).asFloat()
-            output_value = dataBlock.outputValue(SineNode.output)
-            output_value.setFloat(input_value * 2.0)
-
-            amplitudeValue = dataBlock.inputValue(SineNode.amplitude).asFloat()
-            offsetValue = dataBlock.inputValue(SineNode.offset).asFloat()
-
-            sinResult = amplitudeValue * math.sin(offsetValue * input_value)
-            sinHandle = dataBlock.outputValue(SineNode.output)
-            sinHandle.setFloat(sinResult)
-
-            dataBlock.setClean(plug)
-
-
-# creator
-def nodeCreator():
-    return SineNode()
-
-
-# Initializer
-def nodeInitializer():
-
-    nAttr = OpenMaya.MFnNumericAttribute()
-    eAttr = OpenMaya.MFnNumericAttribute()
-    tAttr = OpenMaya.MFnUnitAttribute()
-
-    # Create Inputs
-    # input Attribute
-    SineNode.m_time = tAttr.create(
-        'time', 'time', OpenMaya.MFnUnitAttribute.kTime, 0.0)
-    OpenMaya.MPxNode.addAttribute(SineNode.m_time)
-
-    SineNode.input = nAttr.create(
-        "inputValue", "in", OpenMaya.MFnNumericData.kFloat, 0.0)
-    nAttr.keyable = True
-    nAttr.storable = True
-    nAttr.readable = True
-    nAttr.writable = True
-    OpenMaya.MPxNode.addAttribute(SineNode.input)
-
-    # Amplitude Attribute
-    SineNode.amplitude = nAttr.create(
-        "amplitude", "amp", OpenMaya.MFnNumericData.kFloat, 1.0)
-    nAttr.keyable = True
-    nAttr.storable = True
-    nAttr.readable = True
-    nAttr.writable = True
-    OpenMaya.MPxNode.addAttribute(SineNode.amplitude)
-
-    #Offset Attribute
-    SineNode.offset = nAttr.create(
-        "offset", "off", OpenMaya.MFnNumericData.kFloat, 1.0)
-    nAttr.keyable = True
-    nAttr.storable = True
-    nAttr.readable = True
-    nAttr.writable = True
-    OpenMaya.MPxNode.addAttribute(SineNode.offset)
-
- # Create Outputs
-    SineNode.output = nAttr.create(
-        "outputValue", "out", OpenMaya.MFnNumericData.kFloat, 0.0)
-    nAttr.storable = True
-    OpenMaya.MPxNode.addAttribute(SineNode.output)
-
-    # attribute affects
-    OpenMaya.MPxNode.attributeAffects(SineNode.input, SineNode.output)
-    OpenMaya.MPxNode.attributeAffects(SineNode.amplitude, SineNode.output)
-    OpenMaya.MPxNode.attributeAffects(SineNode.m_time, SineNode.output)
-    OpenMaya.MPxNode.attributeAffects(SineNode.offset, SineNode.output)
-
-
-# Create plug-in
-def initializePlugin(mobject):
-
-    mplugin = OpenMaya.MFnPlugin(mobject)
-
-    try:
-        mplugin.registerNode(
-            kPluginNodeTypeName, SineNodeId, nodeCreator, nodeInitializer)
-    except:
-        sys.stderr.write("Failed to register node: %s" % kPluginNodeTypeName)
-        raise
-
-
-# Uninitialize the script plug-in
-def uninitializePlugin(mobject):
-
-    mplugin = OpenMaya.MFnPlugin(mobject)
-
-    try:
-        mplugin.deregisterNode(SineNodeId)
-    except:
-        sys.stderr.write("Failed to deregister node: %s" % kPluginNodeTypeName)
-        raise
+#UI
+cmds.window(menuBar=True, width=255, h=50, s=False)
+cmds.columnLayout( columnAttach=('both', 5), rowSpacing=10, columnWidth=250 )
+cmds.button('Change Color', c=channelBoxColorOverride)
+cmds.button('Select Script Node', c=channelColorData)
+cmds.button('Get Existing Data', c=get_existing_data)
+cmds.button('Reset All Overrides',c=reset)
+cmds.showWindow()
